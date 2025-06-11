@@ -20,7 +20,9 @@ const config: HardhatUserConfig = {
       chainId: 1337,
     },
     sepolia: {
-      url: process.env.SEPOLIA_RPC_URL,
+      url:
+        process.env.SEPOLIA_RPC_URL ||
+        "https://eth-sepolia.g.alchemy.com/v2/YOUR-API-KEY",
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
       chainId: 11155111,
     },
