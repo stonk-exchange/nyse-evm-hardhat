@@ -2,12 +2,15 @@
 pragma solidity ^0.8.20;
 
 import "./TimelockedAgentToken.sol";
+import "./interfaces/ITimelockedAgentToken.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
+
 
 contract TimelockedAgentTokenFactory {
+
     // Array to store all deployed token addresses
     TimelockedAgentToken[] public deployedTokens;
 
-    // Event emitted when a new token is deployed
     event TokenDeployed(
         address indexed tokenAddress,
         string name,
@@ -20,36 +23,42 @@ contract TimelockedAgentTokenFactory {
      * @dev Deploys a new TimelockedAgentToken contract.
      * @param name The name of the token.
      * @param symbol The symbol of the token.
-     * @param initialSupply The initial supply of the token.
-     * @param owner The owner of the token.
+     * @param totalSupply The total supply of the token.
+     * @param vault The vault address for the token.
      * @param projectTaxRecipient The recipient of project tax.
-     * @param fundedDate The funded date for the token.
      * @param projectBuyTaxBasisPoints The buy tax basis points.
      * @param projectSellTaxBasisPoints The sell tax basis points.
-     * @param swapThresholdBasisPoints The swap threshold basis points.
+     * @param taxSwapThresholdBasisPoints The swap threshold basis points.
      */
     function deployToken(
         string memory name,
         string memory symbol,
-        uint256 initialSupply,
-        address owner,
+        uint256 totalSupply,
+        address vault,
         address projectTaxRecipient,
-        uint32 fundedDate,
         uint16 projectBuyTaxBasisPoints,
         uint16 projectSellTaxBasisPoints,
-        uint16 swapThresholdBasisPoints
+        uint16 taxSwapThresholdBasisPoints
     ) external returns (address) {
         // Deploy a new TimelockedAgentToken instance
+
+        address owner = msg.sender; // Use the sender as the owner
+
+
+        ITimelockedAgentToken.TaxParameters memory compatibleTaxParams = ITimelockedAgentToken.TaxParameters({
+            projectTaxRecipient: projectTaxRecipient,
+            projectBuyTaxBasisPoints: projectBuyTaxBasisPoints,
+            projectSellTaxBasisPoints: projectSellTaxBasisPoints,
+            taxSwapThresholdBasisPoints: taxSwapThresholdBasisPoints
+        });
+        
         TimelockedAgentToken token = new TimelockedAgentToken(
+            owner, // Pass msg.sender as the owner
             name,
             symbol,
-            initialSupply,
-            owner,
-            projectTaxRecipient,
-            fundedDate,
-            projectBuyTaxBasisPoints,
-            projectSellTaxBasisPoints,
-            swapThresholdBasisPoints
+            totalSupply,
+            vault,
+            compatibleTaxParams
         );
 
         // Store the deployed token address
@@ -60,7 +69,7 @@ contract TimelockedAgentTokenFactory {
             address(token),
             name,
             symbol,
-            initialSupply,
+            totalSupply,
             owner
         );
 
