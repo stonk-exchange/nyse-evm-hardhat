@@ -3,7 +3,7 @@ pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
-interface ITimelockedAgentToken is IERC20 {
+interface IStonkToken is IERC20 {
     struct TaxParameters {
         uint16 projectBuyTaxBasisPoints;
         uint16 projectSellTaxBasisPoints;

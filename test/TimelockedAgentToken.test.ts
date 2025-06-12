@@ -1,11 +1,11 @@
 import { expect } from "chai";
 import { ethers } from "hardhat";
-import { TimelockedAgentToken } from "../typechain-types";
+import { StonkToken } from "../typechain-types";
 import { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers";
 import { time } from "@nomicfoundation/hardhat-network-helpers";
 
 describe("TimelockedAgentToken", function () {
-  let token: TimelockedAgentToken;
+  let token: StonkToken;
   let owner: SignerWithAddress;
   let user1: SignerWithAddress;
   let user2: SignerWithAddress;
@@ -24,18 +24,16 @@ describe("TimelockedAgentToken", function () {
 
     TAX_PARAMS.projectTaxRecipient = taxRecipient.address;
 
-    const TimelockedAgentToken = await ethers.getContractFactory(
-      "TimelockedAgentToken"
-    );
+    const StonkToken = await ethers.getContractFactory("StonkToken");
 
-    token = (await TimelockedAgentToken.deploy(
+    token = (await StonkToken.deploy(
       owner.address,
       "NYSE Stock Token",
       "NYSE",
       INITIAL_SUPPLY,
       owner.address, // vault
       TAX_PARAMS
-    )) as TimelockedAgentToken;
+    )) as StonkToken;
 
     await token.waitForDeployment();
   });
@@ -687,9 +685,7 @@ describe("TimelockedAgentToken", function () {
   describe("Liquidity Pool Management", function () {
     it("Should allow owner to add liquidity pool", async function () {
       // Deploy a mock contract to use as a pool
-      const MockContract = await ethers.getContractFactory(
-        "TimelockedAgentToken"
-      );
+      const MockContract = await ethers.getContractFactory("StonkToken");
       const mockContract = await MockContract.deploy(
         owner.address,
         "Mock Token",
