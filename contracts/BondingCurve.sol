@@ -67,8 +67,8 @@ contract BondingCurve is Ownable, ReentrancyGuard {
     function calculatePurchasePrice(
         uint256 tokenAmount
     ) public view returns (uint256) {
-        uint256 currentSupply = stonkToken.totalSupply();
-        uint256 newSupply = currentSupply + tokenAmount;
+        uint256 currentSupply = stonkToken.balanceOf(address(this));
+        uint256 newSupply = currentSupply - tokenAmount;
 
         // Match live project's calculation exactly
         uint256 k = ((K * 10000) / assetRate);
@@ -85,8 +85,8 @@ contract BondingCurve is Ownable, ReentrancyGuard {
     function calculateSaleProceeds(
         uint256 tokenAmount
     ) public view returns (uint256) {
-        uint256 currentSupply = stonkToken.totalSupply();
-        uint256 newSupply = currentSupply - tokenAmount;
+        uint256 currentSupply = stonkToken.balanceOf(address(this));
+        uint256 newSupply = currentSupply + tokenAmount;
 
         // Match live project's calculation exactly
         uint256 k = ((K * 10000) / assetRate);
@@ -116,8 +116,9 @@ contract BondingCurve is Ownable, ReentrancyGuard {
         // Mint tokens to buyer
         stonkToken.transfer(msg.sender, tokenAmount);
 
-        // Check for graduation - use the asset amount being added, not total balance
-        if (assetAmount >= graduationThreshold) {
+        // Check for graduation using total asset balance
+        uint256 totalAssetBalance = assetToken.balanceOf(address(this));
+        if (totalAssetBalance >= graduationThreshold) {
             _graduate();
         }
 
@@ -181,7 +182,7 @@ contract BondingCurve is Ownable, ReentrancyGuard {
 
     // View functions
     function getCurrentPrice() public view returns (uint256) {
-        uint256 currentSupply = stonkToken.totalSupply();
+        uint256 currentSupply = stonkToken.balanceOf(address(this));
         uint256 k = ((K * 10000) / assetRate);
         return (k * PRECISION) / currentSupply;
     }

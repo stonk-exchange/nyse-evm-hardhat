@@ -5,7 +5,7 @@ import { EventLog } from "ethers";
 async function main() {
   const [deployer] = await ethers.getSigners();
 
-  console.log("🚀 Deploying StonkToken to Sepolia Testnet");
+  console.log("🚀 Deploying AAPL Token to Sepolia Testnet");
   console.log("=====================================");
   console.log("Deploying with the account:", deployer.address);
   console.log(
@@ -36,8 +36,8 @@ async function main() {
   const factory = StonkTokenFactory__factory.connect(factoryAddress, deployer);
 
   // Token parameters
-  const name = "Test Stonk Token";
-  const symbol = "TST";
+  const name = "Apple Stock Token";
+  const symbol = "AAPL";
   const totalSupply = ethers.parseEther("1000000"); // 1M tokens
   const projectTaxRecipient = deployer.address; // You can change this
   const projectBuyTaxBasisPoints = 500; // 5%
@@ -47,7 +47,7 @@ async function main() {
   // Get deployment fee
   const deploymentFee = await factory.feePrice();
 
-  console.log("\n📦 Deploying StonkToken...");
+  console.log("\n📦 Deploying AAPL Token...");
   console.log("Token Parameters:");
   console.log("Name:", name);
   console.log("Symbol:", symbol);
@@ -86,14 +86,15 @@ async function main() {
 
   const [tokenAddress, bondingCurveAddress] = eventLog.args;
 
-  console.log("\n✅ StonkToken deployed successfully!");
+  console.log("\n✅ AAPL Token deployed successfully!");
   console.log("Token Address:", tokenAddress);
   console.log("Bonding Curve Address:", bondingCurveAddress);
 
   console.log("\n📜 Next steps:");
   console.log("1. Verify the contracts on Sepolia Etherscan");
-  console.log("2. Fund the bonding curve with initial liquidity");
-  console.log("3. Test buying and selling tokens");
+  console.log(
+    "2. Use the bonding-curve-operations script to interact with the token"
+  );
 }
 
 // Run the deployment script

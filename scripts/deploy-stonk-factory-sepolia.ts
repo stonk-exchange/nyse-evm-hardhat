@@ -22,12 +22,19 @@ async function main() {
     process.exit(1);
   }
 
+  // Get EVILUSDC address from command line
+  const evilUSDCAddress = process.env.EVILUSDC_ADDRESS;
+  if (!evilUSDCAddress) {
+    console.error("❌ Please provide EVILUSDC_ADDRESS environment variable");
+    process.exit(1);
+  }
+
   // Sepolia addresses
   const UNISWAP_FACTORY = "0x7E0987E5b3a30e3f2828572Bb659A548460a3003";
   const UNISWAP_ROUTER = "0xC532a74256D3Db42D0Bf7a0400fEFDbad7694008";
-  const USDC_ADDRESS = "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238";
   const TREASURY_ADDRESS = deployer.address; // You can change this to your treasury address
   const DEPLOYMENT_FEE = ethers.parseEther("0.1"); // 0.1 ETH deployment fee
+  const ASSET_RATE = 10000; // Added asset rate for K normalization
 
   // Deploy the factory contract
   console.log("\n📦 Deploying StonkTokenFactory...");
@@ -39,7 +46,7 @@ async function main() {
     DEPLOYMENT_FEE,
     UNISWAP_FACTORY,
     UNISWAP_ROUTER,
-    USDC_ADDRESS
+    evilUSDCAddress
   );
 
   await factoryInstance.waitForDeployment();
@@ -52,7 +59,8 @@ async function main() {
   console.log("Deployment Fee:", ethers.formatEther(DEPLOYMENT_FEE), "ETH");
   console.log("Uniswap Factory:", UNISWAP_FACTORY);
   console.log("Uniswap Router:", UNISWAP_ROUTER);
-  console.log("USDC Address:", USDC_ADDRESS);
+  console.log("EVILUSDC Address:", evilUSDCAddress);
+  console.log("Asset Rate:", ASSET_RATE);
 
   console.log("\n📜 Saving deployment details...");
   console.log(
