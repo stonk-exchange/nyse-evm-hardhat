@@ -22,6 +22,7 @@ contract StonkTokenFactory is Ownable {
     // Bonding curve parameters
     uint256 public constant BONDING_CURVE_K = 3_000_000_000_000;
     uint256 public constant GRADUATION_THRESHOLD = 100_000 * 1e6; // e.g., 100k USDC
+    uint256 public constant ASSET_RATE = 10000; // Added asset rate for K normalization
 
     struct TokenInfo {
         address token;
@@ -114,7 +115,8 @@ contract StonkTokenFactory is Ownable {
             address(uniswapFactory),
             address(uniswapRouter),
             address(token),
-            GRADUATION_THRESHOLD
+            GRADUATION_THRESHOLD,
+            ASSET_RATE
         );
 
         // Transfer initial supply to bonding curve

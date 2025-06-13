@@ -26,12 +26,17 @@ contract BondingCurve is Ownable, ReentrancyGuard {
     IUniswapV2Router02 public uniswapRouter;
     IStonkToken public stonkToken;
     uint256 public graduationThreshold;
+    uint256 public assetRate; // Added assetRate for K normalization
     bool public isGraduated;
 
     // Events
     event TokensPurchased(address indexed buyer, uint256 amount, uint256 cost);
     event TokensSold(address indexed seller, uint256 amount, uint256 proceeds);
-    event TokenGraduated(address indexed token, uint256 timestamp);
+    event TokenGraduated(
+        address indexed token,
+        uint256 timestamp,
+        address indexed pair
+    );
     event LiquidityAdded(uint256 tokenAmount, uint256 assetAmount);
 
     // Errors
@@ -47,13 +52,15 @@ contract BondingCurve is Ownable, ReentrancyGuard {
         address _uniswapFactory,
         address _uniswapRouter,
         address _stonkToken,
-        uint256 _graduationThreshold
+        uint256 _graduationThreshold,
+        uint256 _assetRate
     ) Ownable(msg.sender) {
         assetToken = IERC20(_assetToken);
         uniswapFactory = IUniswapV2Factory(_uniswapFactory);
         uniswapRouter = IUniswapV2Router02(_uniswapRouter);
         stonkToken = IStonkToken(_stonkToken);
         graduationThreshold = _graduationThreshold;
+        assetRate = _assetRate;
         isGraduated = false;
     }
 
@@ -63,9 +70,15 @@ contract BondingCurve is Ownable, ReentrancyGuard {
         uint256 currentSupply = stonkToken.totalSupply();
         uint256 newSupply = currentSupply + tokenAmount;
 
-        // Using the bonding curve formula: price = (K * (newSupply^2 - currentSupply^2)) / 2
-        uint256 price = (K *
-            (newSupply * newSupply - currentSupply * currentSupply)) / 2;
+        // Match live project's calculation exactly
+        uint256 k = ((K * 10000) / assetRate);
+        uint256 currentPrice = (k * PRECISION) / currentSupply;
+        uint256 newPrice = (k * PRECISION) / newSupply;
+
+        // Calculate average price for the purchase
+        uint256 avgPrice = (currentPrice + newPrice) / 2;
+        uint256 price = (avgPrice * tokenAmount) / PRECISION;
+
         return price;
     }
 
@@ -75,9 +88,15 @@ contract BondingCurve is Ownable, ReentrancyGuard {
         uint256 currentSupply = stonkToken.totalSupply();
         uint256 newSupply = currentSupply - tokenAmount;
 
-        // Using the bonding curve formula: proceeds = (K * (currentSupply^2 - newSupply^2)) / 2
-        uint256 proceeds = (K *
-            (currentSupply * currentSupply - newSupply * newSupply)) / 2;
+        // Match live project's calculation exactly
+        uint256 k = ((K * 10000) / assetRate);
+        uint256 currentPrice = (k * PRECISION) / currentSupply;
+        uint256 newPrice = (k * PRECISION) / newSupply;
+
+        // Calculate average price for the sale
+        uint256 avgPrice = (currentPrice + newPrice) / 2;
+        uint256 proceeds = (avgPrice * tokenAmount) / PRECISION;
+
         return proceeds;
     }
 
@@ -97,8 +116,8 @@ contract BondingCurve is Ownable, ReentrancyGuard {
         // Mint tokens to buyer
         stonkToken.transfer(msg.sender, tokenAmount);
 
-        // Check for graduation
-        if (assetToken.balanceOf(address(this)) >= graduationThreshold) {
+        // Check for graduation - use the asset amount being added, not total balance
+        if (assetAmount >= graduationThreshold) {
             _graduate();
         }
 
@@ -154,16 +173,17 @@ contract BondingCurve is Ownable, ReentrancyGuard {
         );
 
         // Add the Uniswap pair as a liquidity pool
-        stonkToken.addLiquidityPool(pair);
+        // stonkToken.addLiquidityPool(pair);
 
-        emit TokenGraduated(address(stonkToken), block.timestamp);
+        emit TokenGraduated(address(stonkToken), block.timestamp, pair);
         emit LiquidityAdded(tokenBalance, assetBalance);
     }
 
     // View functions
     function getCurrentPrice() public view returns (uint256) {
         uint256 currentSupply = stonkToken.totalSupply();
-        return (K * currentSupply) / PRECISION;
+        uint256 k = ((K * 10000) / assetRate);
+        return (k * PRECISION) / currentSupply;
     }
 
     function getGraduationStatus() public view returns (bool) {
