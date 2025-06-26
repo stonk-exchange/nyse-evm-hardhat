@@ -1,5 +1,4 @@
 import { ethers } from "hardhat";
-import { StonkTokenFactory__factory } from "../typechain-types";
 import { EventLog } from "ethers";
 
 async function main() {
@@ -32,13 +31,38 @@ async function main() {
     process.exit(1);
   }
 
-  // Connect to the factory using typechain factory
-  const factory = StonkTokenFactory__factory.connect(factoryAddress, deployer);
+  // Connect to the factory
+  const factory = await ethers.getContractAt(
+    "StonkTokenFactory",
+    factoryAddress
+  );
+
+  // Verify factory contract state
+  console.log("\n🔍 Verifying factory contract state...");
+  const treasury = await factory.treasury();
+  const feePrice = await factory.feePrice();
+  const uniswapFactory = await factory.uniswapFactory();
+  const uniswapRouter = await factory.uniswapRouter();
+  const assetToken = await factory.assetToken();
+  const globalTokenSupply = await factory.globalTokenSupply();
+  const bondingCurveFeeBasisPoints = await factory.bondingCurveFeeBasisPoints();
+
+  console.log("Factory Configuration:");
+  console.log("- Treasury:", treasury);
+  console.log("- Fee Price:", ethers.formatEther(feePrice), "ETH");
+  console.log("- Global Token Supply:", ethers.formatEther(globalTokenSupply));
+  console.log(
+    "- Bonding Curve Fee:",
+    bondingCurveFeeBasisPoints,
+    "basis points"
+  );
+  console.log("- Uniswap Factory:", uniswapFactory);
+  console.log("- Uniswap Router:", uniswapRouter);
+  console.log("- Asset Token:", assetToken);
 
   // Token parameters
   const name = "Apple Stock Token";
   const symbol = "AAPL";
-  const totalSupply = ethers.parseEther("1000000"); // 1M tokens
   const projectTaxRecipient = deployer.address; // You can change this
   const projectBuyTaxBasisPoints = 500; // 5%
   const projectSellTaxBasisPoints = 500; // 5%
@@ -51,18 +75,21 @@ async function main() {
   console.log("Token Parameters:");
   console.log("Name:", name);
   console.log("Symbol:", symbol);
-  console.log("Total Supply:", ethers.formatEther(totalSupply));
+  console.log(
+    "Total Supply:",
+    ethers.formatEther(globalTokenSupply),
+    "(from factory)"
+  );
   console.log("Project Tax Recipient:", projectTaxRecipient);
   console.log("Buy Tax:", projectBuyTaxBasisPoints / 100, "%");
   console.log("Sell Tax:", projectSellTaxBasisPoints / 100, "%");
   console.log("Swap Threshold:", taxSwapThresholdBasisPoints / 100, "%");
   console.log("Deployment Fee:", ethers.formatEther(deploymentFee), "ETH");
 
-  // Deploy the token
+  // Deploy the token (updated function signature)
   const tx = await factory.deployToken(
     name,
     symbol,
-    totalSupply,
     projectTaxRecipient,
     projectBuyTaxBasisPoints,
     projectSellTaxBasisPoints,
@@ -75,7 +102,7 @@ async function main() {
 
   // Find the TokenDeployed event
   const eventLog = receipt?.logs.find(
-    (log): log is EventLog =>
+    (log: any): log is EventLog =>
       log instanceof EventLog && log.fragment?.name === "TokenDeployed"
   );
 
@@ -92,9 +119,13 @@ async function main() {
 
   console.log("\n📜 Next steps:");
   console.log("1. Verify the contracts on Sepolia Etherscan");
-  console.log(
-    "2. Use the bonding-curve-operations script to interact with the token"
-  );
+  console.log("2. Use the buy-tokens.ts script to purchase tokens");
+  console.log("3. Use the sell-tokens.ts script to sell tokens");
+  console.log("\n📋 Environment variables for trading:");
+  console.log(`export ROUTER_ADDRESS="0x..."`);
+  console.log(`export TOKEN_ADDRESS="${tokenAddress}"`);
+  console.log(`export EVILUSDC_ADDRESS="${assetToken}"`);
+  console.log(`export AMOUNT="1000"`);
 }
 
 // Run the deployment script

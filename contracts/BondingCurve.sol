@@ -19,6 +19,9 @@ contract BondingCurve is Ownable, ReentrancyGuard {
     // Constants
     uint256 public constant K = 3_000_000_000_000; // Bonding curve constant
     uint256 public constant PRECISION = 1e18;
+    uint256 public constant BASIS_POINTS = 10000;
+    uint256 public constant MIN_LIQUIDITY = 1e18; // 1 token (adjust as needed)
+    uint256 public constant MIN_ASSET_LIQUIDITY = 1e6; // 1 USDC (6 decimals, adjust as needed)
 
     // State variables
     IERC20 public assetToken; // The token used for buying/selling (e.g., USDC)
@@ -29,15 +32,35 @@ contract BondingCurve is Ownable, ReentrancyGuard {
     uint256 public assetRate; // Added assetRate for K normalization
     bool public isGraduated;
 
+    // Fee management
+    uint256 public feeBasisPoints;
+    address public treasury;
+
     // Events
-    event TokensPurchased(address indexed buyer, uint256 amount, uint256 cost);
-    event TokensSold(address indexed seller, uint256 amount, uint256 proceeds);
+    event TokensPurchased(
+        address indexed buyer,
+        uint256 amount,
+        uint256 cost,
+        uint256 fee
+    );
+    event TokensSold(
+        address indexed seller,
+        uint256 amount,
+        uint256 proceeds,
+        uint256 fee
+    );
     event TokenGraduated(
         address indexed token,
         uint256 timestamp,
         address indexed pair
     );
     event LiquidityAdded(uint256 tokenAmount, uint256 assetAmount);
+    event TokenAddressSet(address indexed token);
+    event FeeCollected(
+        address indexed treasury,
+        uint256 amount,
+        string operation
+    );
 
     // Errors
     error InsufficientAssetBalance();
@@ -46,6 +69,8 @@ contract BondingCurve is Ownable, ReentrancyGuard {
     error AlreadyGraduated();
     error NotGraduated();
     error SlippageTooHigh();
+    error TokenAlreadySet();
+    error InvalidFee();
 
     constructor(
         address _assetToken,
@@ -53,15 +78,31 @@ contract BondingCurve is Ownable, ReentrancyGuard {
         address _uniswapRouter,
         address _stonkToken,
         uint256 _graduationThreshold,
-        uint256 _assetRate
+        uint256 _assetRate,
+        uint256 _feeBasisPoints,
+        address _treasury
     ) Ownable(msg.sender) {
         assetToken = IERC20(_assetToken);
         uniswapFactory = IUniswapV2Factory(_uniswapFactory);
         uniswapRouter = IUniswapV2Router02(_uniswapRouter);
-        stonkToken = IStonkToken(_stonkToken);
         graduationThreshold = _graduationThreshold;
         assetRate = _assetRate;
+        feeBasisPoints = _feeBasisPoints;
+        treasury = _treasury;
         isGraduated = false;
+
+        // Set token address if provided
+        if (_stonkToken != address(0)) {
+            stonkToken = IStonkToken(_stonkToken);
+        }
+    }
+
+    function setTokenAddress(address _tokenAddress) external onlyOwner {
+        if (address(stonkToken) != address(0)) {
+            revert TokenAlreadySet();
+        }
+        stonkToken = IStonkToken(_tokenAddress);
+        emit TokenAddressSet(_tokenAddress);
     }
 
     function calculatePurchasePrice(
@@ -101,6 +142,7 @@ contract BondingCurve is Ownable, ReentrancyGuard {
     }
 
     function buyTokens(
+        address to,
         uint256 tokenAmount,
         uint256 maxAssetAmount
     ) external nonReentrant {
@@ -108,24 +150,54 @@ contract BondingCurve is Ownable, ReentrancyGuard {
         if (tokenAmount == 0) revert InvalidAmount();
 
         uint256 assetAmount = calculatePurchasePrice(tokenAmount);
-        if (assetAmount > maxAssetAmount) revert SlippageTooHigh();
+        uint256 currentFeeBasisPoints = feeBasisPoints;
+        uint256 fee = currentFeeBasisPoints > 0
+            ? (assetAmount * currentFeeBasisPoints) / BASIS_POINTS
+            : 0;
+        uint256 totalAssetAmount = assetAmount + fee;
 
-        // Transfer assets from buyer
-        assetToken.safeTransferFrom(msg.sender, address(this), assetAmount);
+        if (totalAssetAmount > maxAssetAmount) revert SlippageTooHigh();
 
-        // Mint tokens to buyer
-        stonkToken.transfer(msg.sender, tokenAmount);
+        // Check minimum reserve requirements
+        uint256 currentTokenBalance = stonkToken.balanceOf(address(this));
+        uint256 currentAssetBalance = assetToken.balanceOf(address(this));
 
-        // Check for graduation using total asset balance
-        uint256 totalAssetBalance = assetToken.balanceOf(address(this));
-        if (totalAssetBalance >= graduationThreshold) {
-            _graduate();
+        // Ensure we maintain minimum liquidity for Uniswap graduation
+        if (currentTokenBalance - tokenAmount < MIN_LIQUIDITY) {
+            revert InsufficientTokenBalance();
         }
 
-        emit TokensPurchased(msg.sender, tokenAmount, assetAmount);
+        // Ensure we maintain minimum asset liquidity for Uniswap graduation
+        if (currentAssetBalance + totalAssetAmount < MIN_ASSET_LIQUIDITY) {
+            revert InsufficientAssetBalance();
+        }
+
+        // USDC is already in this contract (router sent it)
+        // Transfer fee to treasury
+        if (fee > 0) {
+            assetToken.safeTransfer(treasury, fee);
+            emit FeeCollected(treasury, fee, "buy");
+        }
+
+        // Transfer tokens to user
+        stonkToken.transfer(to, tokenAmount);
+        emit TokensPurchased(to, tokenAmount, assetAmount, fee);
+
+        // Refund excess USDC to user
+        uint256 excessAmount = maxAssetAmount - totalAssetAmount;
+        if (excessAmount > 0) {
+            assetToken.safeTransfer(to, excessAmount);
+        }
+
+        // Check for automatic graduation
+        uint256 assetBalance = assetToken.balanceOf(address(this));
+        if (assetBalance >= graduationThreshold && !isGraduated) {
+            _graduate();
+        }
     }
 
     function sellTokens(
+        address to,
         uint256 tokenAmount,
         uint256 minAssetAmount
     ) external nonReentrant {
@@ -133,51 +205,68 @@ contract BondingCurve is Ownable, ReentrancyGuard {
         if (tokenAmount == 0) revert InvalidAmount();
 
         uint256 assetAmount = calculateSaleProceeds(tokenAmount);
-        if (assetAmount < minAssetAmount) revert SlippageTooHigh();
+        uint256 currentFeeBasisPoints = feeBasisPoints;
+        uint256 fee = currentFeeBasisPoints > 0
+            ? (assetAmount * currentFeeBasisPoints) / BASIS_POINTS
+            : 0;
+        uint256 netAssetAmount = assetAmount - fee;
 
-        // Transfer tokens from seller
-        stonkToken.transferFrom(msg.sender, address(this), tokenAmount);
+        if (netAssetAmount < minAssetAmount) revert SlippageTooHigh();
 
-        // Transfer assets to seller
-        assetToken.safeTransfer(msg.sender, assetAmount);
-
-        emit TokensSold(msg.sender, tokenAmount, assetAmount);
+        // Project tokens are already in this contract (router sent them)
+        // Transfer USDC to user
+        assetToken.safeTransfer(to, netAssetAmount);
+        // Transfer fee to treasury
+        if (fee > 0) {
+            assetToken.safeTransfer(treasury, fee);
+            emit FeeCollected(treasury, fee, "sell");
+        }
+        emit TokensSold(to, tokenAmount, netAssetAmount, fee);
     }
 
+    // Internal function to handle graduation
     function _graduate() internal {
         if (isGraduated) return;
 
         isGraduated = true;
 
-        // Create Uniswap pair
-        address pair = uniswapFactory.createPair(
+        // Create Uniswap pair and add initial liquidity
+        address pair = uniswapFactory.getPair(
             address(stonkToken),
             address(assetToken)
         );
+        if (pair == address(0)) {
+            pair = uniswapFactory.createPair(
+                address(stonkToken),
+                address(assetToken)
+            );
+        }
 
-        // Add liquidity to Uniswap
+        // Add liquidity to Uniswap from bonding curve reserves
         uint256 tokenBalance = stonkToken.balanceOf(address(this));
         uint256 assetBalance = assetToken.balanceOf(address(this));
 
-        stonkToken.approve(address(uniswapRouter), tokenBalance);
-        assetToken.approve(address(uniswapRouter), assetBalance);
+        if (tokenBalance > 0 && assetBalance > 0) {
+            // Approve Uniswap router
+            stonkToken.approve(address(uniswapRouter), tokenBalance);
+            assetToken.approve(address(uniswapRouter), assetBalance);
 
-        uniswapRouter.addLiquidity(
-            address(stonkToken),
-            address(assetToken),
-            tokenBalance,
-            assetBalance,
-            tokenBalance,
-            assetBalance,
-            address(this),
-            block.timestamp + 15 minutes
-        );
+            // Add liquidity to Uniswap
+            uniswapRouter.addLiquidity(
+                address(stonkToken),
+                address(assetToken),
+                tokenBalance,
+                assetBalance,
+                tokenBalance,
+                assetBalance,
+                address(this),
+                block.timestamp + 15 minutes
+            );
 
-        // Add the Uniswap pair as a liquidity pool
-        // stonkToken.addLiquidityPool(pair);
+            emit LiquidityAdded(tokenBalance, assetBalance);
+        }
 
         emit TokenGraduated(address(stonkToken), block.timestamp, pair);
-        emit LiquidityAdded(tokenBalance, assetBalance);
     }
 
     // View functions
@@ -189,5 +278,36 @@ contract BondingCurve is Ownable, ReentrancyGuard {
 
     function getGraduationStatus() public view returns (bool) {
         return isGraduated;
+    }
+
+    function getGraduationThreshold() public view returns (uint256) {
+        return graduationThreshold;
+    }
+
+    // Fee calculation view functions
+    function calculateBuyFee(
+        uint256 tokenAmount
+    ) external view returns (uint256 assetAmount, uint256 fee) {
+        assetAmount = calculatePurchasePrice(tokenAmount);
+        fee = feeBasisPoints > 0
+            ? (assetAmount * feeBasisPoints) / BASIS_POINTS
+            : 0;
+    }
+
+    function calculateSellFee(
+        uint256 tokenAmount
+    ) external view returns (uint256 assetAmount, uint256 fee) {
+        assetAmount = calculateSaleProceeds(tokenAmount);
+        fee = feeBasisPoints > 0
+            ? (assetAmount * feeBasisPoints) / BASIS_POINTS
+            : 0;
+    }
+
+    function getFeeInfo()
+        external
+        view
+        returns (uint256 feeBasisPoints_, address treasury_)
+    {
+        return (feeBasisPoints, treasury);
     }
 }

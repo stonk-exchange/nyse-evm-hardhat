@@ -1,0 +1,21 @@
+{
+  "network": "sepolia",
+  "deployer": "0xeb3b769e24F003Af0A1B869aeCfeD87154758868",
+  "treasury": "0xeb3b769e24F003Af0A1B869aeCfeD87154758868",
+  "deploymentFee": "0.1",
+  "globalTokenSupply": "1000000.0",
+  "bondingCurveFeeBasisPoints": 300,
+  "uniswapFactory": "0xF62c03E08ada871A0bEb309762E260a7a6a880E6",
+  "uniswapRouter": "0xeE567Fe1712Faf6149d80dA1E6934E354124CfE3",
+  "evilUSDC": "0x585206d3539B0E275F9729F1c543E51D1C58db95",
+  "factory": "0x9B0547fc87d88e53Feefd942b279b1172Cb88583",
+  "router": "0x04E9A77EF49C40e7AFe048e248bcCf5CB676D75d",
+  "deploymentTime": "2025-06-30T21:05:00.904Z",
+  "gasOptimizations": {
+    "removedDeployedTokensArray": true,
+    "removedTokenInfoMapping": true,
+    "removedBatchQueryFunctions": true,
+    "customErrors": true,
+    "optimizedEventIndexing": true
+  }
+}

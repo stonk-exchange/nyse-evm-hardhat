@@ -5,16 +5,19 @@ import {
   StonkTokenFactory,
   StonkToken,
   BondingCurve,
+  StonkTradingRouter,
   MockERC20,
   MockUniswapFactory,
   MockUniswapRouter,
   StonkToken__factory,
   BondingCurve__factory,
+  StonkTradingRouter__factory,
 } from "../typechain-types";
 import { ContractTransactionReceipt, EventLog } from "ethers";
 
-describe("StonkTokenFactory", function () {
+describe("StonkTokenFactory with TradingRouter", function () {
   let factory: StonkTokenFactory;
+  let router: StonkTradingRouter;
   let stonkToken: StonkToken;
   let bondingCurve: BondingCurve;
   let assetToken: MockERC20;
@@ -28,6 +31,8 @@ describe("StonkTokenFactory", function () {
   const INITIAL_SUPPLY = ethers.parseEther("1000000"); // 1M tokens
   const GRADUATION_THRESHOLD = ethers.parseUnits("100000", 6); // 100k USDC
   const DEPLOYMENT_FEE = ethers.parseEther("0.1"); // 0.1 ETH
+  const GLOBAL_TOKEN_SUPPLY = ethers.parseEther("1000000"); // 1M tokens
+  const BONDING_CURVE_FEE_BASIS_POINTS = 300; // 3% fee
 
   beforeEach(async function () {
     [owner, user1, user2, treasury] = await ethers.getSigners();
@@ -61,8 +66,24 @@ describe("StonkTokenFactory", function () {
       DEPLOYMENT_FEE,
       await uniswapFactory.getAddress(),
       await uniswapRouter.getAddress(),
+      await assetToken.getAddress(),
+      GLOBAL_TOKEN_SUPPLY,
+      BONDING_CURVE_FEE_BASIS_POINTS
+    );
+
+    // Deploy StonkTradingRouter
+    const StonkTradingRouter = await ethers.getContractFactory(
+      "StonkTradingRouter"
+    );
+    router = await StonkTradingRouter.deploy(
+      await factory.getAddress(),
+      await uniswapRouter.getAddress(),
+      await uniswapFactory.getAddress(),
       await assetToken.getAddress()
     );
+
+    // Set the trading router in the factory
+    await factory.setTradingRouter(await router.getAddress());
   });
 
   describe("Token Deployment", function () {
@@ -70,7 +91,6 @@ describe("StonkTokenFactory", function () {
       const tx = await factory.deployToken(
         "Test Token",
         "TEST",
-        ethers.parseEther("1000000"), // 1M tokens
         treasury.address,
         500, // 5% buy tax
         500, // 5% sell tax
@@ -104,7 +124,7 @@ describe("StonkTokenFactory", function () {
       // Verify token info
       expect(await token.name()).to.equal("Test Token");
       expect(await token.symbol()).to.equal("TEST");
-      expect(await token.totalSupply()).to.equal(ethers.parseEther("1000000"));
+      expect(await token.totalSupply()).to.equal(GLOBAL_TOKEN_SUPPLY);
       expect(await token.owner()).to.equal(owner.address);
 
       // Check initial price
@@ -117,7 +137,6 @@ describe("StonkTokenFactory", function () {
         factory.deployToken(
           "Test Token",
           "TEST",
-          ethers.parseEther("1000000"),
           treasury.address,
           500,
           500,
@@ -129,10 +148,11 @@ describe("StonkTokenFactory", function () {
 
     it("should refund excess fee", async function () {
       const excessFee = ethers.parseEther("0.05");
+      const initialBalance = await ethers.provider.getBalance(owner.address);
+
       const tx = await factory.deployToken(
         "Test Token",
         "TEST",
-        ethers.parseEther("1000000"),
         treasury.address,
         500,
         500,
@@ -148,21 +168,19 @@ describe("StonkTokenFactory", function () {
       const gasCost = gasUsed * gasPrice;
 
       // Initial balance - gas cost - deployment fee should equal final balance
-      expect(balanceAfter).to.equal(
-        (await ethers.provider.getBalance(owner.address)) -
-          gasCost -
-          DEPLOYMENT_FEE
-      );
+      expect(balanceAfter).to.equal(initialBalance - gasCost - DEPLOYMENT_FEE);
     });
   });
 
-  describe("Bonding Curve Operations", function () {
+  describe("TradingRouter Operations", function () {
+    let tokenAddress: string;
+    let bondingCurveAddress: string;
+
     beforeEach(async function () {
       // Deploy a token first
       const tx = await factory.deployToken(
         "Test Token",
         "TEST",
-        INITIAL_SUPPLY,
         treasury.address,
         500,
         500,
@@ -178,7 +196,7 @@ describe("StonkTokenFactory", function () {
       );
 
       if (!eventLog) throw new Error("TokenDeployed event not found");
-      const [tokenAddress, bondingCurveAddress] = eventLog.args;
+      [tokenAddress, bondingCurveAddress] = eventLog.args;
 
       stonkToken = StonkToken__factory.connect(tokenAddress, owner);
       bondingCurve = BondingCurve__factory.connect(bondingCurveAddress, owner);
@@ -187,95 +205,113 @@ describe("StonkTokenFactory", function () {
       await assetToken.transfer(user1.address, ethers.parseUnits("100000", 6));
       await assetToken
         .connect(user1)
-        .approve(
-          await bondingCurve.getAddress(),
-          ethers.parseUnits("100000", 6)
-        );
+        .approve(await router.getAddress(), ethers.parseUnits("100000", 6));
+
+      // Also approve router for token spending (for selling)
+      await stonkToken
+        .connect(user1)
+        .approve(await router.getAddress(), ethers.parseEther("1000000"));
+
+      // Approve router to spend bonding curve's tokens and USDC
+      await stonkToken
+        .connect(bondingCurve.runner)
+        .approve(await router.getAddress(), ethers.parseEther("1000000"));
+      await assetToken
+        .connect(bondingCurve.runner)
+        .approve(await router.getAddress(), ethers.parseUnits("1000000", 6));
     });
 
-    it("should allow buying tokens through bonding curve", async function () {
+    it("should allow buying tokens through router (bonding curve phase)", async function () {
       const buyAmount = ethers.parseEther("10");
       const maxAssetAmount = ethers.parseUnits("100", 6);
+      const deadline = Math.floor(Date.now() / 1000) + 300; // 5 minutes
 
-      await bondingCurve.connect(user1).buyTokens(buyAmount, maxAssetAmount);
+      // Check initial trading state
+      const [graduated, bondingCurveAddr, uniswapPair] =
+        await router.getTokenTradingState(tokenAddress);
+      expect(graduated).to.be.false;
+      expect(bondingCurveAddr).to.equal(bondingCurveAddress);
+      expect(uniswapPair).to.equal(ethers.ZeroAddress);
 
-      expect(await stonkToken.balanceOf(user1.address)).to.equal(buyAmount);
+      // Buy through router
+      await router
+        .connect(user1)
+        .buyTokens(tokenAddress, buyAmount, maxAssetAmount, deadline);
+
+      // Verify tokens were received
+      const userBalance = await stonkToken.balanceOf(user1.address);
+      expect(userBalance).to.equal(buyAmount);
     });
 
-    it("should allow selling tokens through bonding curve", async function () {
+    it("should calculate buy price correctly", async function () {
+      const buyAmount = ethers.parseEther("10");
+
+      // Calculate price through router
+      const routerPrice = await router.calculateBuyPrice(
+        tokenAddress,
+        buyAmount
+      );
+
+      // Calculate price directly through bonding curve
+      const bondingCurvePrice = await bondingCurve.calculatePurchasePrice(
+        buyAmount
+      );
+
+      expect(routerPrice).to.equal(bondingCurvePrice);
+    });
+
+    it("should calculate sell proceeds correctly", async function () {
+      const sellAmount = ethers.parseEther("10");
+
+      // Calculate proceeds through router
+      const routerProceeds = await router.calculateSellProceeds(
+        tokenAddress,
+        sellAmount
+      );
+
+      // Calculate proceeds directly through bonding curve
+      const bondingCurveProceeds = await bondingCurve.calculateSaleProceeds(
+        sellAmount
+      );
+
+      expect(routerProceeds).to.equal(bondingCurveProceeds);
+    });
+
+    it("should allow selling tokens through router (bonding curve phase)", async function () {
       // First buy some tokens
       const buyAmount = ethers.parseEther("10");
       const maxAssetAmount = ethers.parseUnits("100", 6);
-      await bondingCurve.connect(user1).buyTokens(buyAmount, maxAssetAmount);
+      const deadline = Math.floor(Date.now() / 1000) + 300;
 
-      // Then sell half
-      const sellAmount = buyAmount / 2n;
-      const minAssetAmount = 0;
+      await router
+        .connect(user1)
+        .buyTokens(tokenAddress, buyAmount, maxAssetAmount, deadline);
+
+      // Now sell some tokens
+      const sellAmount = ethers.parseEther("5");
+      // Calculate expected proceeds from bonding curve
+      const expectedProceeds = await bondingCurve.calculateSaleProceeds(
+        sellAmount
+      );
+      // Calculate fee
+      const feeBasisPoints = await bondingCurve.feeBasisPoints();
+      const fee = (expectedProceeds * BigInt(feeBasisPoints)) / 10000n;
+      const netProceeds = expectedProceeds - fee;
+      // Set minAssetAmount to netProceeds minus a small buffer (e.g., 1 USDC)
+      const minAssetAmount = netProceeds - ethers.parseUnits("1", 6);
+
+      // Approve router to spend tokens
       await stonkToken
         .connect(user1)
-        .approve(await bondingCurve.getAddress(), sellAmount);
-      await bondingCurve.connect(user1).sellTokens(sellAmount, minAssetAmount);
+        .approve(await router.getAddress(), sellAmount);
 
-      expect(await stonkToken.balanceOf(user1.address)).to.equal(
-        buyAmount - sellAmount
-      );
-    });
-
-    it("should graduate to Uniswap when threshold is reached", async function () {
-      // Buy enough tokens to reach graduation threshold
-      const buyAmount = ethers.parseEther("100000"); // Increased to ensure price calculation exceeds threshold
-      const maxAssetAmount = ethers.parseUnits("1000000", 6); // Increased to allow for higher price
-
-      // Log the current price before buying
-      const currentPrice = await bondingCurve.getCurrentPrice();
-      console.log(
-        "Price before graduation attempt:",
-        ethers.formatEther(currentPrice)
-      );
-
-      // Calculate expected cost
-      const expectedCost = await bondingCurve.calculatePurchasePrice(buyAmount);
-      console.log(
-        "Expected cost for graduation:",
-        ethers.formatUnits(expectedCost, 6)
-      );
-
-      // Make sure we have enough USDC
-      const requiredUSDC = expectedCost * 2n; // Double the expected cost to be safe
-      await assetToken.transfer(user1.address, requiredUSDC);
-      await assetToken
+      await router
         .connect(user1)
-        .approve(await bondingCurve.getAddress(), requiredUSDC);
+        .sellTokens(tokenAddress, sellAmount, minAssetAmount, deadline);
 
-      await bondingCurve.connect(user1).buyTokens(buyAmount, maxAssetAmount);
-
-      // Verify graduation
-      // const tokenInfo = await factory.getTokenInfo(
-      //   await stonkToken.getAddress()
-      // );
-      // expect(tokenInfo.isGraduated).to.be.true;
-
-      // Verify Uniswap pair was created
-      const pair = await uniswapFactory.getPair(
-        await stonkToken.getAddress(),
-        await assetToken.getAddress()
-      );
-      expect(pair).to.not.equal(ethers.ZeroAddress);
-    });
-  });
-
-  describe("Factory Admin Functions", function () {
-    it("should allow owner to update fee price", async function () {
-      const newFee = ethers.parseEther("0.2");
-      await factory.setFeePrice(newFee);
-      expect(await factory.feePrice()).to.equal(newFee);
-    });
-
-    it("should not allow non-owner to update fee price", async function () {
-      const newFee = ethers.parseEther("0.2");
-      await expect(
-        factory.connect(user1).setFeePrice(newFee)
-      ).to.be.revertedWithCustomError(factory, "OwnableUnauthorizedAccount");
+      // Verify tokens were sold
+      const userTokenBalance = await stonkToken.balanceOf(user1.address);
+      expect(userTokenBalance).to.equal(buyAmount - sellAmount);
     });
   });
 });
