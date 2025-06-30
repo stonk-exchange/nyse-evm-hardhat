@@ -6,24 +6,20 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "./interfaces/ITimelockedAgentToken.sol";
+import "./interfaces/IStonkToken.sol";
 import "./libraries/TradingDaysLibrary.sol";
 
-contract TimelockedAgentToken is ERC20, ITimelockedAgentToken, Ownable {
+contract StonkToken is ERC20, IStonkToken, Ownable {
     using EnumerableSet for EnumerableSet.AddressSet;
     using SafeERC20 for IERC20;
     using TradingDaysLibrary for uint256;
 
     uint256 internal constant BP_DENOM = 10000;
-    uint256 internal constant ROUND_DEC = 100000000000;
-    uint256 internal constant CALL_GAS_LIMIT = 50000;
-    uint256 internal constant MAX_SWAP_THRESHOLD_MULTIPLE = 20;
 
     // Token State Variables
     bool internal _tokenHasTax;
     bool private _autoSwapInProgress;
 
-    uint32 public fundedDate;
     uint16 public projectBuyTaxBasisPoints;
     uint16 public projectSellTaxBasisPoints;
     uint16 public swapThresholdBasisPoints;
@@ -48,7 +44,7 @@ contract TimelockedAgentToken is ERC20, ITimelockedAgentToken, Ownable {
     error LiquidityPoolMustBeAContractAddress();
 
     modifier onlyDuringMarketHours() {
-        _checkMarketHours(_msgSender());
+        // _checkMarketHours(_msgSender());
         _;
     }
 
@@ -274,32 +270,35 @@ contract TimelockedAgentToken is ERC20, ITimelockedAgentToken, Ownable {
     ) internal returns (uint256 amountLessTax) {
         amountLessTax = sentAmount;
 
+        // Early return if no tax processing needed
+        if (!_tokenHasTax || !applyTax || _autoSwapInProgress) {
+            return amountLessTax;
+        }
+
         unchecked {
-            if (_tokenHasTax && applyTax && !_autoSwapInProgress) {
-                uint256 tax;
+            uint256 tax;
+            bool isToLiquidityPool = isLiquidityPool(to);
+            bool isFromLiquidityPool = isLiquidityPool(from);
 
-                // On sell (to liquidity pool)
-                if (isLiquidityPool(to) && projectSellTaxBasisPoints > 0) {
-                    uint256 projectTax = (sentAmount *
-                        projectSellTaxBasisPoints) / BP_DENOM;
-                    projectTaxPendingSwap += uint128(projectTax);
-                    tax += projectTax;
-                }
-                // On buy (from liquidity pool)
-                else if (
-                    isLiquidityPool(from) && projectBuyTaxBasisPoints > 0
-                ) {
-                    uint256 projectTax = (sentAmount *
-                        projectBuyTaxBasisPoints) / BP_DENOM;
-                    projectTaxPendingSwap += uint128(projectTax);
-                    tax += projectTax;
-                }
+            // On sell (to liquidity pool)
+            if (isToLiquidityPool && projectSellTaxBasisPoints > 0) {
+                uint256 projectTax = (sentAmount * projectSellTaxBasisPoints) /
+                    BP_DENOM;
+                projectTaxPendingSwap += uint128(projectTax);
+                tax += projectTax;
+            }
+            // On buy (from liquidity pool)
+            else if (isFromLiquidityPool && projectBuyTaxBasisPoints > 0) {
+                uint256 projectTax = (sentAmount * projectBuyTaxBasisPoints) /
+                    BP_DENOM;
+                projectTaxPendingSwap += uint128(projectTax);
+                tax += projectTax;
+            }
 
-                if (tax > 0) {
-                    // Transfer tax to contract
-                    super._transfer(from, address(this), tax);
-                    amountLessTax -= tax;
-                }
+            if (tax > 0) {
+                // Transfer tax to contract
+                super._transfer(from, address(this), tax);
+                amountLessTax -= tax;
             }
         }
 
