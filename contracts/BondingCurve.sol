@@ -49,11 +49,7 @@ contract BondingCurve is Ownable, ReentrancyGuard {
         uint256 proceeds,
         uint256 fee
     );
-    event TokenGraduated(
-        address indexed token,
-        uint256 timestamp,
-        address indexed pair
-    );
+    event TokenGraduated(address indexed token, address indexed pair);
     event LiquidityAdded(uint256 tokenAmount, uint256 assetAmount);
     event TokenAddressSet(address indexed token);
     event FeeCollected(
@@ -266,7 +262,7 @@ contract BondingCurve is Ownable, ReentrancyGuard {
             emit LiquidityAdded(tokenBalance, assetBalance);
         }
 
-        emit TokenGraduated(address(stonkToken), block.timestamp, pair);
+        emit TokenGraduated(address(stonkToken), pair);
     }
 
     // View functions
