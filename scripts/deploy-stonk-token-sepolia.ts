@@ -14,15 +14,15 @@ async function main() {
   );
 
   // Check if we have enough ETH for deployment
-  const balance = await deployer.provider.getBalance(deployer.address);
-  if (balance < ethers.parseEther("0.2")) {
-    // Need more ETH for token deployment
-    console.error(
-      "❌ Insufficient ETH balance for deployment. Need at least 0.2 ETH"
-    );
-    console.error("Get Sepolia ETH from: https://sepoliafaucet.com/");
-    process.exit(1);
-  }
+  // const balance = await deployer.provider.getBalance(deployer.address);
+  // if (balance < ethers.parseEther("0.2")) {
+  //   // Need more ETH for token deployment
+  //   console.error(
+  //     "❌ Insufficient ETH balance for deployment. Need at least 0.2 ETH"
+  //   );
+  //   console.error("Get Sepolia ETH from: https://sepoliafaucet.com/");
+  //   process.exit(1);
+  // }
 
   // Get the factory address from command line argument
   const factoryAddress = process.env.FACTORY_ADDRESS;

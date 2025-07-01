@@ -48,14 +48,13 @@ async function main() {
   }
 
   const TREASURY_ADDRESS = deployer.address; // You can change this to your treasury address
-  const DEPLOYMENT_FEE = ethers.parseEther("0.1"); // 0.1 ETH deployment fee
-  const GLOBAL_TOKEN_SUPPLY = ethers.parseEther("1000000"); // 1M tokens
+  const DEPLOYMENT_FEE = ethers.parseEther("0.01"); // 0.01 ETH deployment fee
   const BONDING_CURVE_FEE_BASIS_POINTS = 300; // 3% fee
 
   console.log("\n📋 Deployment Configuration:");
   console.log("Treasury Address:", TREASURY_ADDRESS);
   console.log("Deployment Fee:", ethers.formatEther(DEPLOYMENT_FEE), "ETH");
-  console.log("Global Token Supply:", ethers.formatEther(GLOBAL_TOKEN_SUPPLY));
+  console.log("Global Token Supply: 1,000,000,000 tokens (fixed)");
   console.log(
     "Bonding Curve Fee:",
     BONDING_CURVE_FEE_BASIS_POINTS,
@@ -77,7 +76,6 @@ async function main() {
     UNISWAP_FACTORY,
     UNISWAP_ROUTER,
     evilUSDCAddress,
-    GLOBAL_TOKEN_SUPPLY,
     BONDING_CURVE_FEE_BASIS_POINTS
   );
 
@@ -147,7 +145,7 @@ async function main() {
     deployer: deployer.address,
     treasury: TREASURY_ADDRESS,
     deploymentFee: ethers.formatEther(DEPLOYMENT_FEE),
-    globalTokenSupply: ethers.formatEther(GLOBAL_TOKEN_SUPPLY),
+    globalTokenSupply: "1000000000", // Fixed 1 billion supply
     bondingCurveFeeBasisPoints: BONDING_CURVE_FEE_BASIS_POINTS,
     uniswapFactory: UNISWAP_FACTORY,
     uniswapRouter: UNISWAP_ROUTER,

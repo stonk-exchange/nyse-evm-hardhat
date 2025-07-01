@@ -28,7 +28,6 @@ contract StonkTradingRouter is Ownable, ReentrancyGuard {
     event TokenGraduated(
         address indexed tokenAddress,
         address indexed uniswapPair,
-        uint256 indexed timestamp,
         uint256 tokenBalance,
         uint256 assetBalance
     );
@@ -38,8 +37,7 @@ contract StonkTradingRouter is Ownable, ReentrancyGuard {
         address indexed buyer,
         uint256 indexed tokenAmount,
         uint256 assetAmount,
-        bool isBondingCurve,
-        uint256 timestamp
+        bool isBondingCurve
     );
 
     event TokensSold(
@@ -47,18 +45,16 @@ contract StonkTradingRouter is Ownable, ReentrancyGuard {
         address indexed seller,
         uint256 indexed tokenAmount,
         uint256 assetAmount,
-        bool isBondingCurve,
-        uint256 timestamp
+        bool isBondingCurve
     );
 
     event TokenRegistered(
         address indexed tokenAddress,
-        address indexed bondingCurveAddress,
-        uint256 indexed timestamp
+        address indexed bondingCurveAddress
     );
 
-    event RouterPaused(address indexed by, uint256 timestamp);
-    event RouterUnpaused(address indexed by, uint256 timestamp);
+    event RouterPaused(address indexed by);
+    event RouterUnpaused(address indexed by);
 
     // Custom errors for gas efficiency
     error ContractPaused();
@@ -90,12 +86,12 @@ contract StonkTradingRouter is Ownable, ReentrancyGuard {
     // Emergency pause functions
     function pause() external onlyOwner {
         paused = true;
-        emit RouterPaused(msg.sender, block.timestamp);
+        emit RouterPaused(msg.sender);
     }
 
     function unpause() external onlyOwner {
         paused = false;
-        emit RouterUnpaused(msg.sender, block.timestamp);
+        emit RouterUnpaused(msg.sender);
     }
 
     // Register a new token deployment
@@ -105,7 +101,7 @@ contract StonkTradingRouter is Ownable, ReentrancyGuard {
     ) external {
         if (msg.sender != address(factory)) revert OnlyFactory();
         bondingCurveAddress[tokenAddress] = bondingCurveAddr;
-        emit TokenRegistered(tokenAddress, bondingCurveAddr, block.timestamp);
+        emit TokenRegistered(tokenAddress, bondingCurveAddr);
     }
 
     // Unified buy function that routes to appropriate mechanism
@@ -133,8 +129,7 @@ contract StonkTradingRouter is Ownable, ReentrancyGuard {
                 msg.sender,
                 tokensReceived,
                 maxAssetAmount,
-                false,
-                block.timestamp
+                false
             );
         } else {
             // Buy through bonding curve
@@ -148,8 +143,7 @@ contract StonkTradingRouter is Ownable, ReentrancyGuard {
                 msg.sender,
                 tokensReceived,
                 maxAssetAmount,
-                true,
-                block.timestamp
+                true
             );
         }
     }
@@ -179,8 +173,7 @@ contract StonkTradingRouter is Ownable, ReentrancyGuard {
                 msg.sender,
                 tokenAmount,
                 assetsReceived,
-                false,
-                block.timestamp
+                false
             );
         } else {
             // Sell through bonding curve
@@ -194,8 +187,7 @@ contract StonkTradingRouter is Ownable, ReentrancyGuard {
                 msg.sender,
                 tokenAmount,
                 assetsReceived,
-                true,
-                block.timestamp
+                true
             );
         }
     }
@@ -431,7 +423,6 @@ contract StonkTradingRouter is Ownable, ReentrancyGuard {
             emit TokenGraduated(
                 tokenAddress,
                 pair,
-                block.timestamp,
                 0, // tokenBalance - not needed for this event
                 0 // assetBalance - not needed for this event
             );

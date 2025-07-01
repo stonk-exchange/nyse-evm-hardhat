@@ -44,55 +44,40 @@ contract StonkTokenFactory is Ownable {
         string symbol,
         uint256 initialSupply,
         address indexed owner,
-        uint256 deploymentFee,
-        uint256 timestamp
+        uint256 deploymentFee
     );
 
     event TokenGraduated(
         address indexed tokenAddress,
-        address indexed bondingCurveAddress,
-        uint256 timestamp
+        address indexed bondingCurveAddress
     );
 
     event TokenTradingStateChanged(
         address indexed tokenAddress,
         bool isBondingCurve,
-        bool isUniswap,
-        uint256 timestamp
+        bool isUniswap
     );
 
-    event FeePriceUpdated(
-        uint256 indexed oldPrice,
-        uint256 indexed newPrice,
-        uint256 timestamp
-    );
-    event GlobalSupplyUpdated(
-        uint256 indexed oldSupply,
-        uint256 indexed newSupply,
-        uint256 timestamp
-    );
+    event FeePriceUpdated(uint256 indexed oldPrice, uint256 indexed newPrice);
+    // Removed GlobalSupplyUpdated event - supply is now fixed at 1 billion
     event BondingCurveFeeUpdated(
         uint256 indexed oldFee,
-        uint256 indexed newFee,
-        uint256 timestamp
+        uint256 indexed newFee
     );
     event TreasuryUpdated(
         address indexed oldTreasury,
-        address indexed newTreasury,
-        uint256 timestamp
+        address indexed newTreasury
     );
     event FeeCollected(
         address indexed token,
         uint256 indexed amount,
-        address indexed treasury,
-        uint256 timestamp
+        address indexed treasury
     );
-    event Paused(address indexed account, uint256 timestamp);
-    event Unpaused(address indexed account, uint256 timestamp);
+    event Paused(address indexed account);
+    event Unpaused(address indexed account);
     event TradingRouterUpdated(
         address indexed oldRouter,
-        address indexed newRouter,
-        uint256 timestamp
+        address indexed newRouter
     );
 
     // Custom errors for gas efficiency
@@ -114,12 +99,11 @@ contract StonkTokenFactory is Ownable {
         address _uniswapFactory,
         address _uniswapRouter,
         address _assetToken,
-        uint256 _globalTokenSupply,
         uint256 _bondingCurveFeeBasisPoints
     ) Ownable(msg.sender) {
         treasury = _treasury;
         feePrice = _feePrice;
-        globalTokenSupply = _globalTokenSupply;
+        globalTokenSupply = 1_000_000_000 * 10 ** 18; // Fixed 1 billion supply with 18 decimals
         bondingCurveFeeBasisPoints = _bondingCurveFeeBasisPoints;
         uniswapFactory = IUniswapV2Factory(_uniswapFactory);
         uniswapRouter = IUniswapV2Router02(_uniswapRouter);
@@ -130,47 +114,39 @@ contract StonkTokenFactory is Ownable {
     function setFeePrice(uint256 _newFeePrice) external onlyOwner {
         uint256 oldPrice = feePrice;
         feePrice = _newFeePrice;
-        emit FeePriceUpdated(oldPrice, _newFeePrice, block.timestamp);
+        emit FeePriceUpdated(oldPrice, _newFeePrice);
     }
 
-    function setGlobalTokenSupply(uint256 _newSupply) external onlyOwner {
-        uint256 oldSupply = globalTokenSupply;
-        globalTokenSupply = _newSupply;
-        emit GlobalSupplyUpdated(oldSupply, _newSupply, block.timestamp);
-    }
+    // Removed setGlobalTokenSupply function - all tokens will have 1 billion supply
 
     function setBondingCurveFee(uint256 _newFeeBasisPoints) external onlyOwner {
         require(_newFeeBasisPoints <= 1000, "Fee cannot exceed 10%"); // Max 10%
         uint256 oldFee = bondingCurveFeeBasisPoints;
         bondingCurveFeeBasisPoints = _newFeeBasisPoints;
-        emit BondingCurveFeeUpdated(
-            oldFee,
-            _newFeeBasisPoints,
-            block.timestamp
-        );
+        emit BondingCurveFeeUpdated(oldFee, _newFeeBasisPoints);
     }
 
     function setTreasury(address _newTreasury) external onlyOwner {
         require(_newTreasury != address(0), "Treasury cannot be zero address");
         address oldTreasury = treasury;
         treasury = _newTreasury;
-        emit TreasuryUpdated(oldTreasury, _newTreasury, block.timestamp);
+        emit TreasuryUpdated(oldTreasury, _newTreasury);
     }
 
     function setTradingRouter(address _tradingRouter) external onlyOwner {
         require(_tradingRouter != address(0), "Router cannot be zero address");
         tradingRouter = StonkTradingRouter(_tradingRouter);
-        emit TradingRouterUpdated(address(0), _tradingRouter, block.timestamp);
+        emit TradingRouterUpdated(address(0), _tradingRouter);
     }
 
     function pause() external onlyOwner {
         paused = true;
-        emit Paused(msg.sender, block.timestamp);
+        emit Paused(msg.sender);
     }
 
     function unpause() external onlyOwner {
         paused = false;
-        emit Unpaused(msg.sender, block.timestamp);
+        emit Unpaused(msg.sender);
     }
 
     // Helper function to create tax parameters (reduces stack usage)
@@ -256,8 +232,7 @@ contract StonkTokenFactory is Ownable {
             symbol,
             globalTokenSupply,
             msg.sender,
-            feePrice,
-            block.timestamp
+            feePrice
         );
 
         return (tokenAddr, bondingCurveAddr);
